@@ -1,0 +1,268 @@
+--- a/target/linux/ramips/dts/mt7620a_xiaomi_miwifi-mini.dts
++++ b/target/linux/ramips/dts/mt7620a_xiaomi_miwifi-mini.dts
+@@ -78,7 +78,7 @@
+ 	flash@0 {
+ 		compatible = "jedec,spi-nor";
+ 		reg = <0>;
+-		spi-max-frequency = <70000000>;
++		spi-max-frequency = <50000000>;
+ 		m25p,fast-read;
+ 
+ 		partitions {
+--- a/package/boot/uboot-envtools/files/ramips
++++ b/package/boot/uboot-envtools/files/ramips
+@@ -106,7 +106,8 @@
+ 	[ -n "$idx" ] && \
+ 		ubootenv_add_uci_config "/dev/mtd$idx" "0x0" "0x1000" "0x1000"
+ 	;;
+-xiaomi,miwifi-mini)
++xiaomi,miwifi-mini|\
++xiaomi,miwifi-router-r3-16mb)
+ 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x1000" "0x10000"
+ 	ubootenv_add_uci_sys_config "/dev/mtd9" "0x0" "0x4000" "0x10000"
+ 	;;
+--- a/target/linux/ramips/image/mt7620.mk
++++ b/target/linux/ramips/image/mt7620.mk
+@@ -1313,11 +1313,21 @@
+   IMAGE_SIZE := 15872k
+   DEVICE_VENDOR := Xiaomi
+   DEVICE_MODEL := MiWiFi Mini
+-  DEVICE_PACKAGES := kmod-mt76x2 kmod-usb2 kmod-usb-ohci
++  DEVICE_PACKAGES := kmod-mt76x2 kmod-usb2 kmod-usb-ohci uboot-envtools
+   SUPPORTED_DEVICES += miwifi-mini
+ endef
+ TARGET_DEVICES += xiaomi_miwifi-mini
+ 
++define Device/xiaomi_miwifi-router-r3-16mb
++  SOC := mt7620a
++  IMAGE_SIZE := 15872k
++  DEVICE_VENDOR := Xiaomi
++  DEVICE_MODEL := MiWiFi Router R3 (16mb spi mod)
++  DEVICE_PACKAGES := kmod-mt76x2 kmod-usb2 kmod-usb-ohci uboot-envtools
++  SUPPORTED_DEVICES += miwifi-router-r3-16mb
++endef
++TARGET_DEVICES += xiaomi_miwifi-router-r3-16mb
++
+ define Device/youku_x2
+   SOC := mt7620a
+   IMAGE_SIZE := 16064k
+--- a/target/linux/ramips/mt7620/base-files/etc/board.d/01_leds	2024-03-23 02:26:03.000000000 +0400
++++ b/target/linux/ramips/mt7620/base-files/etc/board.d/01_leds	2024-03-23 20:44:31.190572143 +0400
+@@ -235,7 +235,8 @@
+ 	ucidef_set_led_switch "lan" "lan" "blue:lan" "switch0" "0x20"
+ 	ucidef_set_led_switch "wan" "wan" "blue:wan" "switch0" "0x10"
+ 	;;
+-xiaomi,miwifi-mini)
++xiaomi,miwifi-mini|\
++xiaomi,miwifi-router-r3-16mb)
+ 	ucidef_set_led_switch "lan1" "lan1" "green:lan1" "switch0" "0x02"
+ 	ucidef_set_led_switch "lan2" "lan2" "green:lan2" "switch0" "0x01"
+ 	ucidef_set_led_switch "wan" "wan" "green:wan" "switch0" "0x10"
+--- a/target/linux/ramips/mt7620/base-files/etc/board.d/02_network
++++ b/target/linux/ramips/mt7620/base-files/etc/board.d/02_network
+@@ -196,6 +196,10 @@
+ 		ucidef_add_switch "switch0" \
+ 			"0:lan:2" "1:lan:1" "4:wan" "6@eth0"
+ 		;;
++	xiaomi,miwifi-router-r3-16mb)
++		ucidef_add_switch "switch0" \
++			"1:lan:2" "4:lan:1" "0:wan" "6@eth0"
++		;;
+ 	lenovo,newifi-y1s)
+ 		ucidef_add_switch "switch0" \
+ 			"1:lan:4" "2:lan:3" "4:lan:2" "5:lan:1" "0:wan" "6@eth0"
+@@ -271,6 +275,10 @@
+ 	local label_mac=""
+ 
+ 	case $board in
++	xiaomi,miwifi-mini|\
++	xiaomi,miwifi-router-r3-16mb)
++		lan_mac=$(macaddr_add "$(mtd_get_mac_binary factory 0x28)" -1)
++		;;	
+ 	aigale,ai-br100|\
+ 	asus,rt-n12p|\
+ 	asus,rt-n14u|\
+--- a/target/linux/ramips/dts/mt7620a_xiaomi_miwifi-router-r3-16mb.dts
++++ b/target/linux/ramips/dts/mt7620a_xiaomi_miwifi-router-r3-16mb.dts
+@@ -0,0 +1,181 @@
++#include "mt7620a.dtsi"
++
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/input/input.h>
++
++/ {
++	compatible = "xiaomi,miwifi-router-r3-16mb", "ralink,mt7620a-soc";
++	model = "Xiaomi MiWiFi Router R3 (16mb spi mod)";
++
++	aliases {
++		led-boot = &led_yellow;
++		led-failsafe = &led_red;
++		led-running = &led_blue;
++		led-upgrade = &led_blue;
++		label-mac-device = &ethernet;
++	};
++
++	chosen {
++		bootargs = "console=ttyS0,115200";
++	};
++
++	leds {
++		compatible = "gpio-leds";
++
++		led_blue: blue {
++			label = "blue:status";
++			gpios = <&gpio1 0 GPIO_ACTIVE_LOW>;
++		};
++
++		led_yellow: yellow {
++			label = "yellow:status";
++			gpios = <&gpio1 2 GPIO_ACTIVE_LOW>;
++		};
++
++		led_red: red {
++			label = "red:status";
++			gpios = <&gpio1 5 GPIO_ACTIVE_LOW>;
++		};
++
++		wan {
++			label = "green:wan";
++			gpios = <&gpio2 4 GPIO_ACTIVE_LOW>;
++		};
++
++		lan1 {
++			label = "green:lan1";
++			gpios = <&gpio2 1 GPIO_ACTIVE_LOW>;
++		};
++
++		lan2 {
++			label = "green:lan2";
++			gpios = <&gpio2 0 GPIO_ACTIVE_LOW>;
++		};
++	};
++
++	keys {
++		compatible = "gpio-keys";
++
++		reset {
++			label = "reset";
++			gpios = <&gpio1 6 GPIO_ACTIVE_HIGH>;
++			linux,code = <KEY_RESTART>;
++		};
++	};
++};
++
++&gpio1 {
++	status = "okay";
++};
++
++&gpio2 {
++	status = "okay";
++};
++
++&spi0 {
++	status = "okay";
++
++	flash@0 {
++		compatible = "jedec,spi-nor";
++		reg = <0>;
++		spi-max-frequency = <50000000>;
++		m25p,fast-read;
++
++		partitions {
++			compatible = "fixed-partitions";
++			#address-cells = <1>;
++			#size-cells = <1>;
++
++			partition@0 {
++				label = "u-boot";
++				reg = <0x0 0x30000>;
++				read-only;
++			};
++
++			partition@30000 {
++				label = "u-boot-env";
++				reg = <0x30000 0x10000>;
++			};
++
++			factory: partition@40000 {
++				label = "factory";
++				reg = <0x40000 0x10000>;
++				read-only;
++			};
++
++			partition@50000 {
++				compatible = "denx,uimage";
++				label = "firmware";
++				reg = <0x50000 0xf80000>;
++			};
++
++			partition@fd0000 {
++				label = "crash";
++				reg = <0xfd0000 0x10000>;
++			};
++
++			partition@fe0000 {
++				label = "reserved";
++				reg = <0xfe0000 0x10000>;
++				read-only;
++			};
++
++			partition@ff0000 {
++				label = "Bdata";
++				reg = <0xff0000 0x10000>;
++			};
++		};
++	};
++};
++
++&ehci {
++	status = "okay";
++};
++
++&ohci {
++	status = "okay";
++};
++
++&ethernet {
++	nvmem-cells = <&macaddr_factory_28>;
++	nvmem-cell-names = "mac-address";
++
++	mediatek,portmap = "llllw";
++};
++
++&wmac {
++	ralink,mtd-eeprom = <&factory 0x0>;
++
++	pinctrl-names = "default", "pa_gpio";
++	pinctrl-0 = <&pa_pins>;
++	pinctrl-1 = <&pa_gpio_pins>;
++};
++
++&pcie {
++	status = "okay";
++};
++
++&pcie0 {
++	mt76@0,0 {
++		reg = <0x0000 0 0 0 0>;
++		mediatek,mtd-eeprom = <&factory 0x8000>;
++		ieee80211-freq-limit = <5000000 6000000>;
++	};
++};
++
++&state_default {
++	gpio {
++		groups = "ephy", "i2c", "rgmii1";
++		function = "gpio";
++	};
++};
++
++&factory {
++	compatible = "nvmem-cells";
++	#address-cells = <1>;
++	#size-cells = <1>;
++
++	macaddr_factory_28: macaddr@28 {
++		reg = <0x28 0x6>;
++	};
++};
